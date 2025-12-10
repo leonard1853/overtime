@@ -365,6 +365,27 @@
         .pdf-btn:hover {
             background: linear-gradient(to right, #b03d00, #cc5200);
         }
+        
+        /* 专门用于PDF生成的样式 - 在页面上隐藏 */
+        .pdf-header {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            background: linear-gradient(135deg, #1a5fb4 0%, #2d87d0 100%);
+            color: white;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .pdf-footer {
+            display: none;
+            text-align: center;
+            padding: 15px;
+            color: #666;
+            font-size: 12px;
+            border-top: 1px solid #eee;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
@@ -532,6 +553,21 @@
         </p>
     </div>
 
+    <!-- 专门用于PDF生成的隐藏内容 -->
+    <div id="pdfHeaderTemplate" style="display: none;">
+        <div class="pdf-header">
+            <h1 style="margin: 0; font-size: 24px;">劳动法加班费计算结果</h1>
+            <p style="margin: 10px 0 0 0; font-size: 16px;">生成时间: <span id="pdfGenerationTime"></span></p>
+        </div>
+    </div>
+    
+    <div id="pdfFooterTemplate" style="display: none;">
+        <div class="pdf-footer">
+            <p style="margin: 5px 0;">第 <span id="currentPage"></span> 页 / 共 <span id="totalPages"></span> 页</p>
+            <p style="margin: 5px 0;">本计算器根据《中华人民共和国劳动法》及相关法规制作，仅供参考</p>
+        </div>
+    </div>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const calculateBtn = document.getElementById('calculateBtn');
@@ -666,100 +702,74 @@
             
             async function downloadPdfResults() {
                 try {
-                    // 显示加载提示
+                    // 1. 显示加载提示
                     const originalText = downloadPdfBtn.innerHTML;
                     downloadPdfBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成PDF中...';
                     downloadPdfBtn.disabled = true;
-                    
-                    // 获取要导出的内容
-                    const contentToExport = document.getElementById('contentToExport');
-                    const lawSection = document.getElementById('lawSection');
-                    
-                    // 创建PDF实例
+
+                    // 2. 创建PDF实例 - 使用最简化的参数
                     const { jsPDF } = window.jspdf;
                     const pdf = new jsPDF('p', 'mm', 'a4');
+
+                    // 3. 捕获主内容区域为图片
+                    const contentToExport = document.getElementById('contentToExport');
                     
-                    // 设置PDF属性
-                    pdf.setProperties({
-                        title: '劳动法加班费计算结果',
-                        subject: '加班费计算',
-                        author: '劳动法加班费计算器',
-                        keywords: '劳动法, 加班费, 计算',
-                        creator: '劳动法加班费计算器'
-                    });
-                    
-                    // 添加标题页
-                    pdf.setFontSize(22);
-                    pdf.setTextColor(26, 95, 180);
-                    pdf.text('劳动法加班费计算结果', 105, 30, { align: 'center' });
-                    
-                    pdf.setFontSize(14);
-                    pdf.setTextColor(80, 80, 80);
-                    pdf.text('生成时间: ' + new Date().toLocaleString('zh-CN'), 105, 45, { align: 'center' });
-                    
-                    // 添加分隔线
-                    pdf.setDrawColor(26, 95, 180);
-                    pdf.setLineWidth(0.5);
-                    pdf.line(20, 55, 190, 55);
-                    
-                    // 1. 导出计算结果部分
-                    pdf.setFontSize(16);
-                    pdf.setTextColor(26, 95, 180);
-                    pdf.text('一、计算结果', 20, 70);
-                    
+                    // 使用更可靠的 html2canvas 配置
                     const canvas1 = await html2canvas(contentToExport, {
                         scale: 2, // 提高清晰度
-                        useCORS: true,
-                        backgroundColor: '#ffffff'
+                        useCORS: true, // 处理跨域资源（如字体图标）
+                        backgroundColor: '#ffffff',
+                        logging: false, // 关闭控制台日志，减少干扰
+                        // 明确指定图像格式，确保数据有效
+                        imageTimeout: 0 // 防止图像加载超时
                     });
-                    
-                    const imgData1 = canvas1.toDataURL('image/jpeg', 0.9);
-                    const imgWidth1 = 170;
-                    const imgHeight1 = (canvas1.height * imgWidth1) / canvas1.width;
-                    
-                    pdf.addImage(imgData1, 'JPEG', 20, 75, imgWidth1, imgHeight1);
-                    
-                    // 2. 导出法律依据部分（在新的一页）
-                    pdf.addPage();
-                    
-                    pdf.setFontSize(16);
-                    pdf.setTextColor(26, 95, 180);
-                    pdf.text('二、法律依据与说明', 20, 30);
-                    
+
+                    // 关键检查：确保canvas已成功生成
+                    if (!canvas1 || canvas1.width === 0) {
+                        throw new Error('页面内容捕获失败，请重试。');
+                    }
+
+                    // 将canvas转换为Data URL - 使用PNG格式以确保兼容性
+                    const imgData1 = canvas1.toDataURL('image/png');
+
+                    // 计算图片在PDF中的尺寸 (A4纸宽度约210mm，左右留边各10mm)
+                    const pdfPageWidth = 210;
+                    const margin = 10;
+                    const imgWidth = pdfPageWidth - 2 * margin;
+                    const imgHeight = (canvas1.height * imgWidth) / canvas1.width;
+
+                    // 4. 将图片添加到PDF第一页
+                    pdf.addImage(imgData1, 'PNG', margin, margin, imgWidth, imgHeight);
+
+                    // 5. 捕获法律依据部分，并添加到新页面
+                    const lawSection = document.getElementById('lawSection');
                     const canvas2 = await html2canvas(lawSection, {
                         scale: 2,
                         useCORS: true,
-                        backgroundColor: '#ffffff'
+                        backgroundColor: '#ffffff',
+                        logging: false,
+                        imageTimeout: 0
                     });
-                    
-                    const imgData2 = canvas2.toDataURL('image/jpeg', 0.9);
-                    const imgWidth2 = 170;
-                    const imgHeight2 = (canvas2.height * imgWidth2) / canvas2.width;
-                    
-                    pdf.addImage(imgData2, 'JPEG', 20, 40, imgWidth2, imgHeight2);
-                    
-                    // 添加页脚
-                    const totalPages = pdf.internal.getNumberOfPages();
-                    for (let i = 1; i <= totalPages; i++) {
-                        pdf.setPage(i);
-                        pdf.setFontSize(10);
-                        pdf.setTextColor(128, 128, 128);
-                        pdf.text(`第 ${i} 页 / 共 ${totalPages} 页`, 105, 287, { align: 'center' });
-                        pdf.text('本计算器根据《中华人民共和国劳动法》及相关法规制作，仅供参考', 105, 292, { align: 'center' });
+
+                    if (canvas2 && canvas2.width > 0) {
+                        const imgData2 = canvas2.toDataURL('image/png');
+                        const imgWidth2 = pdfPageWidth - 2 * margin;
+                        const imgHeight2 = (canvas2.height * imgWidth2) / canvas2.width;
+
+                        // 添加新页
+                        pdf.addPage();
+                        // 将法律依据部分添加到第二页
+                        pdf.addImage(imgData2, 'PNG', margin, margin, imgWidth2, imgHeight2);
                     }
-                    
-                    // 保存PDF文件
+
+                    // 6. 保存PDF文件
                     pdf.save(`加班费计算结果_${new Date().toLocaleDateString('zh-CN')}.pdf`);
-                    
-                    // 恢复按钮状态
-                    downloadPdfBtn.innerHTML = originalText;
-                    downloadPdfBtn.disabled = false;
-                    
+
                 } catch (error) {
-                    console.error('生成PDF时出错:', error);
-                    alert('生成PDF时出错，请重试或使用文本下载功能。');
-                    
-                    // 恢复按钮状态
+                    console.error('生成PDF时发生错误:', error);
+                    alert(`生成PDF失败：${error.message}\n请确保页面内容已完全加载后重试。`);
+                } finally {
+                    // 7. 无论成功与否，都恢复按钮状态
                     downloadPdfBtn.innerHTML = '<i class="fas fa-file-pdf"></i> 导出完整PDF';
                     downloadPdfBtn.disabled = false;
                 }
